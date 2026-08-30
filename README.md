@@ -14,7 +14,7 @@ This repository contains a macro-enabled Excel implementation of a bilateral cou
 - [Scope and assumptions](#scope-and-assumptions)
 - [How to navigate the workbook](#how-to-navigate-the-workbook)
 - [Calculation architecture](#calculation-architecture)
-- [Notation and model inputs](#notation-and-model-inputs)
+- [Equation symbology](#equation-symbology)
 - [Mathematical framework](#mathematical-framework)
 - [Technical guide to every sheet](#technical-guide-to-every-sheet)
 - [VBA procedures and recalculation order](#vba-procedures-and-recalculation-order)
@@ -87,25 +87,138 @@ MonteCarlo -- expected rate and MMA -----------------------------------> Main
 
 Each row in the large simulation sheets represents one Monte Carlo scenario. Each time column represents one quarterly date. `Main` reduces these matrices across scenarios into exposure and valuation-adjustment profiles.
 
-## Notation and model inputs
+## Equation symbology
 
-| Symbol | Meaning |
-|---|---|
-| $r_t$ | Short rate at time $t$ |
-| $r_0$ | Initial short rate |
-| $\alpha$ | Vasicek mean-reversion speed |
-| $\mu$ | Vasicek long-run mean |
-| $\sigma$ | Vasicek instantaneous volatility |
-| $\tau=T-t$ | Remaining maturity |
-| $P(t,T)$ | Zero-coupon price at $t$ for maturity $T$ |
-| $\delta$ | Quarterly accrual factor, $0.25$ |
-| $K$ | Fixed swap rate |
-| $A(t)$ | Fixed-leg annuity |
-| $Q_X(t)$ | Survival measure for party $X\in\{A,B\}$ |
-| $R_X$ | Recovery rate of party $X$ |
-| $\mathrm{LGD}_X$ | Loss given default, $1-R_X$ |
-| $\mathrm{EE}_X(t)$ | Expected positive exposure in direction $X$ |
-| $M(t)$ | Workbook money-market-account value |
+Rates and spreads are represented as decimals in the equations unless explicitly stated otherwise. For example, 2% is written as $0.02$. Times and maturities are measured in years, present values are expressed per unit of notional, and discount factors and probabilities are dimensionless. A subscript identifies a payment date or scenario; an argument in parentheses identifies the time at which a quantity is evaluated.
+
+### Indices, dates, and general operators
+
+| Symbol | Meaning | Unit or domain |
+|---|---|---|
+| $t$ | Current valuation or observation time | Years |
+| $T$ | Cash-flow or bond maturity date | Years |
+| $\tau=T-t$ | Remaining time from valuation to maturity | Years |
+| $t_j$ | The $j$-th Monte Carlo observation date | Years |
+| $T_i$ | The $i$-th contractual swap payment date | Years |
+| $\Delta t$ | Simulation time step; quarterly in the workbook | $0.25$ years |
+| $i$ | Market-instrument or swap-payment index | Positive integer |
+| $j$ | Simulation-time index | $j=0,\ldots,J$ |
+| $n$ | Monte Carlo scenario index | $n=1,\ldots,N$ |
+| $N$ | Number of Monte Carlo scenarios | $10{,}000$ in the workbook |
+| $J$ | Number of simulation intervals | $20$ quarterly intervals over five years |
+| $X$ | Counterparty label | $X\in\{A,B\}$ |
+| $\sum$ | Sum over the stated index | Operator |
+| $\max(x,0)$ | Positive part of $x$ | Same unit as $x$ |
+| $\exp(x)=e^x$ | Exponential function | Operator |
+
+### Nelson–Siegel–Svensson curve
+
+| Symbol | Meaning | Unit or domain |
+|---|---|---|
+| $m$ | Market-curve maturity supplied to `NSS_Spot` | Years |
+| $y(m)$ | NSS-fitted spot-rate value at maturity $m$ | Rate |
+| $y_i^{\mathrm{market}}$ | Observed market rate for instrument $i$ | Rate |
+| $y_i^{\mathrm{NSS}}$ | NSS model rate corresponding to instrument $i$ | Rate |
+| $\beta_0$ | Long-run level factor | Rate |
+| $\beta_1$ | Short-end slope factor | Rate |
+| $\beta_2$ | First curvature factor | Rate |
+| $\beta_3$ | Second curvature factor | Rate |
+| $\tau_1,\tau_2$ | NSS decay parameters controlling where the factor loadings peak | Years; positive |
+| $L(m,\tau)$ | NSS level/slope loading, $(1-e^{-m/\tau})/(m/\tau)$ | Dimensionless |
+| $\mathrm{SSE}_{\mathrm{NSS}}$ | Sum of squared market-versus-NSS rate errors | Rate squared |
+
+Here, $m$ means curve maturity. In the Monte Carlo section, $m_{n,j}$ instead denotes a conditional mean and is always written with both scenario and time subscripts.
+
+### Vasicek short-rate model and zero-coupon bonds
+
+| Symbol | Meaning | Unit or domain |
+|---|---|---|
+| $r_t$ | Continuously compounded instantaneous short rate at time $t$ | Rate |
+| $r_0$ | Initial short rate used to start the model | Rate |
+| $dr_t$ | Infinitesimal change in the short rate | Rate |
+| $\alpha$ | Speed at which $r_t$ mean-reverts toward $\mu$ | Per year; normally $>0$ |
+| $\mu$ | Long-run mean level of the short rate | Rate |
+| $\sigma$ | Instantaneous short-rate volatility | Rate per square-root year |
+| $W_t$ | Standard Brownian motion | Stochastic process |
+| $dW_t$ | Brownian increment with variance $dt$ | Square-root years |
+| $dt$ | Infinitesimal time increment | Years |
+| $B(\tau)$ | Vasicek duration loading multiplying the current short rate | Years |
+| $A(\tau)$ | Vasicek affine intercept in the bond-price exponent | Dimensionless |
+| $P(t,T)$ | Price at $t$ of a zero-coupon bond paying one unit at $T$ | Discount factor |
+| $P_i^{\mathrm{market}}$ | Market-implied discount factor for maturity $i$ | Discount factor |
+| $P_i^{\mathrm{Vasicek}}$ | Vasicek discount factor for maturity $i$ | Discount factor |
+| $\mathrm{SSE}_{\mathrm{Vasicek}}$ | Sum of squared market-versus-model discount-factor errors | Dimensionless |
+
+The affine notation $A(\tau)$ in the bond formula is distinct from party $A$ and from the swap annuity $A_N$; its argument or subscript identifies the intended meaning.
+
+### Monte Carlo simulation
+
+| Symbol | Meaning | Unit or domain |
+|---|---|---|
+| $r_{n,j}$ | Simulated short rate in scenario $n$ at date $t_j$ | Rate |
+| $m_{n,j}$ | Conditional mean of $r_{n,j}$ given $r_{n,j-1}$ | Rate |
+| $U_{n,j}$ | Independent uniform random draw | $U(0,1)$ |
+| $\Phi^{-1}(\cdot)$ | Inverse standard-normal cumulative distribution function | Operator |
+| $Z_{n,j}$ | Standard-normal shock, $\Phi^{-1}(U_{n,j})$ | $N(0,1)$ |
+| $s_{\mathrm{workbook}}$ | Shock standard deviation implemented by the VBA routine | Rate |
+| $s_{\mathrm{standard}}$ | Shock standard deviation in the standard exact Vasicek transition | Rate |
+| $\bar r(t_j)$ | Cross-scenario mean short rate at date $t_j$ | Rate |
+| $I(t_j)$ | Trapezoidal approximation to $\int_0^{t_j}\bar r(u)\,du$ | Dimensionless |
+| $u$ | Dummy time variable inside the rate integral | Years |
+| $M(t_j)$ | Workbook money-market-account value, $e^{I(t_j)}$ | Dimensionless |
+
+### Interest-rate swap valuation
+
+| Symbol | Meaning | Unit or domain |
+|---|---|---|
+| $P_i=P(0,T_i)$ | Time-zero discount factor for payment date $T_i$ | Discount factor |
+| $P_0$ | Discount factor at inception; normally equal to one | Discount factor |
+| $P_N$ | Discount factor at the final payment date | Discount factor |
+| $F_i$ | Unannualized forward return over payment period $i$ | Rate for the period |
+| $\delta_i$ | Year fraction for payment period $i$ | Years |
+| $\delta$ | Constant quarterly accrual factor used in the workbook | $0.25$ years |
+| $\mathrm{PV}_{\mathrm{float}}$ | Present value of the floating-rate leg per unit notional | Value per unit notional |
+| $A_N$ | Time-zero fixed-leg annuity through the final payment date | Years |
+| $K$ | Par fixed swap rate determined at inception | Rate per year |
+| $V_{\mathrm{swap}}(0)$ | Net receive-floating/pay-fixed swap value at inception | Value per unit notional |
+| $P_{n,j}$ | Scenario-$n$ discount factor for the maturity represented by column $j$ | Discount factor |
+| $A_{n,j}$ | Cumulative fixed-leg annuity in scenario $n$ through column $j$ | Years |
+| $\mathrm{remaining}(j)$ | Reverse-column mapping to the swap's remaining maturity at exposure date $t_j$ | Column index |
+| $V_{n,j}$ | Scenario swap value at exposure date $t_j$ | Value per unit notional |
+
+All valuation equations assume unit notional. For a contractual notional $\mathcal N$, multiply swap values and exposures by $\mathcal N$.
+
+### Exposure measures
+
+| Symbol | Meaning | Unit or domain |
+|---|---|---|
+| $\mathrm{FE}_{A,n}(t_j)$ | Positive exposure to party $A$, $\max(V_{n,j},0)$ | Value per unit notional |
+| $\mathrm{FE}_{B,n}(t_j)$ | Positive exposure in the opposite direction, $\max(-V_{n,j},0)$ | Value per unit notional |
+| $\mathrm{EE}_A(t_j)$ | Scenario-average positive exposure to $A$ | Value per unit notional |
+| $\mathrm{EE}_B(t_j)$ | Scenario-average positive exposure to $B$ | Value per unit notional |
+| $\mathrm{MAXFE}_X(t_j)$ | Maximum scenario exposure for party $X$ at $t_j$ | Value per unit notional |
+| $\mathrm{PFE}_{X,q}(t_j)$ | Empirical $q$-quantile of exposure for party $X$ at $t_j$ | Value per unit notional |
+| $q$ | Selected confidence level for PFE | $0.90$, $0.95$, or $0.99$ |
+
+The workbook rows labelled `PFE(A)` and `PFE(B)` report $\mathrm{MAXFE}$, not a percentile. The separately labelled 90%, 95%, and 99% rows contain the empirical percentile calculations.
+
+### Credit risk and valuation adjustment
+
+| Symbol | Meaning | Unit or domain |
+|---|---|---|
+| $s_X$ | CDS spread supplied for party $X$ | Rate per year |
+| $R_X$ | Assumed recovery fraction for party $X$ after default | Between 0 and 1 |
+| $\mathrm{LGD}_X=1-R_X$ | Loss-given-default fraction for party $X$ | Between 0 and 1 |
+| $Q_X(t)$ | Workbook-implied survival measure for party $X$ through time $t$ | Probability-like value |
+| $Q_X(t_{j-1})-Q_X(t_j)$ | Workbook marginal default measure over interval $(t_{j-1},t_j]$ | Probability-like value |
+| $\mathrm{CVA}^{A}_j$ | Period-$j$ adjustment associated with positive exposure to $A$ and default of $B$ | Value per unit notional |
+| $\mathrm{CVA}^{B}_j$ | Period-$j$ opposite-direction, DVA-like adjustment associated with default of $A$ | Value per unit notional |
+| $\mathrm{CVA}^{A},\mathrm{CVA}^{B}$ | Sums of the corresponding period adjustments | Value per unit notional |
+| $\mathrm{DVA}$ | Debit valuation adjustment: own-default benefit from one party's viewpoint | Value per unit notional |
+| $\mathrm{BCVA}$ | Bilateral adjustment, commonly represented as CVA minus DVA under a stated sign convention | Value per unit notional |
+| $\mathcal N$ | Optional contractual notional used to scale unit-notional results | Currency amount |
+
+Superscripts $A$ and $B$ identify the exposure/default direction used by the workbook; they are labels, not mathematical powers. Because CVA/DVA sign conventions vary, the economic viewpoint should always be stated when reporting a bilateral result.
 
 ## Mathematical framework
 
