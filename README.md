@@ -68,6 +68,10 @@ The workbook contains two similarly named sheets with different purposes:
 
 The file contains VBA. Excel can display cached values with macros disabled, but VBA user-defined functions and simulation outputs will not reliably refresh. Enable macros only after reviewing the VBA and the implementation warnings below.
 
+### Display conventions
+
+Calculated rates, spreads, recoveries, survival probabilities, and simulated short rates are displayed as percentages with four decimal places (`0.0000%`). Discount factors, annuities, swap values, exposures, CVA amounts, times, and integrals are displayed as numbers with four decimal places (`0.0000`). Scenario identifiers, simulation counts, and time-step counts remain integers. Number formatting affects presentation only; it does not round or change the stored calculation values.
+
 ## Calculation architecture
 
 ```text
