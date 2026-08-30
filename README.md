@@ -2,11 +2,11 @@
 
 This repository contains a macro-enabled Excel implementation of a bilateral counterparty-credit-risk workflow for a five-year fixed-for-floating interest-rate swap (IRS). The model calibrates an initial term structure, values the swap, simulates short rates under a one-factor Vasicek process, revalues the swap across 10,000 scenarios, constructs future-exposure profiles, and aggregates the profiles into CVA-style measures.
 
-> **Model-risk notice:** this is a prototype workbook, not a production pricing library. The repository documentation distinguishes the intended quantitative methodology from the workbook's exact implementation. Review the [known implementation issues](#known-implementation-and-model-risk-issues) before recalculating or relying on the results.
+> **Model-risk notice:** this is a prototype model, not a production pricing library. The repository documentation distinguishes the intended quantitative methodology from the implemented spreadsheet calculations. Review the [known implementation issues](#known-implementation-and-model-risk-issues) before recalculating or relying on the results.
 
 ## Repository contents
 
-- [`IRS_CVA2.xlsm`](IRS_CVA2.xlsm) — the Excel model, including VBA functions, simulation procedures, cached scenario matrices, charts, and an in-workbook `README` navigation sheet.
+- [`IRS_CVA2.xlsm`](IRS_CVA2.xlsm) — the Excel model, including VBA functions, simulation procedures, cached scenario matrices, charts, and an integrated `README` navigation sheet.
 - [`README.md`](README.md) — this mathematical and operational reference.
 
 ## Table of contents
@@ -23,9 +23,9 @@ This repository contains a macro-enabled Excel implementation of a bilateral cou
 
 ## Scope and assumptions
 
-The workbook models a single IRS under the following configuration:
+The model estimates the exposure and CVA of a single IRS under the following configuration:
 
-| Item | Workbook setting |
+| Item | Model setting |
 |---|---:|
 | Notional | Normalized to 1 |
 | Swap tenor | 5 years |
@@ -100,11 +100,11 @@ Rates and spreads are represented as decimals in the equations unless explicitly
 | $\tau=T-t$ | Remaining time from valuation to maturity | Years |
 | $t_j$ | The $j$-th Monte Carlo observation date | Years |
 | $T_i$ | The $i$-th contractual swap payment date | Years |
-| $\Delta t$ | Simulation time step; quarterly in the workbook | $0.25$ years |
+| $\Delta t$ | Simulation time step; quarterly in the model | $0.25$ years |
 | $i$ | Market-instrument or swap-payment index | Positive integer |
 | $j$ | Simulation-time index | $j=0,\ldots,J$ |
 | $n$ | Monte Carlo scenario index | $n=1,\ldots,N$ |
-| $N$ | Number of Monte Carlo scenarios | $10{,}000$ in the workbook |
+| $N$ | Number of Monte Carlo scenarios | $10{,}000$ in the model |
 | $J$ | Number of simulation intervals | $20$ quarterly intervals over five years |
 | $X$ | Counterparty label | $X\in\{A,B\}$ |
 | $\sum$ | Sum over the stated index | Operator |
@@ -160,12 +160,11 @@ The affine notation $A(\tau)$ in the bond formula is distinct from party $A$ and
 | $U_{n,j}$ | Independent uniform random draw | $U(0,1)$ |
 | $\Phi^{-1}(\cdot)$ | Inverse standard-normal cumulative distribution function | Operator |
 | $Z_{n,j}$ | Standard-normal shock, $\Phi^{-1}(U_{n,j})$ | $N(0,1)$ |
-| $s_{\mathrm{workbook}}$ | Shock standard deviation implemented by the VBA routine | Rate |
-| $s_{\mathrm{standard}}$ | Shock standard deviation in the standard exact Vasicek transition | Rate |
+| $s_r$ | Exact conditional standard deviation of the next simulated short rate | Rate |
 | $\bar r(t_j)$ | Cross-scenario mean short rate at date $t_j$ | Rate |
 | $I(t_j)$ | Trapezoidal approximation to $\int_0^{t_j}\bar r(u)\,du$ | Dimensionless |
 | $u$ | Dummy time variable inside the rate integral | Years |
-| $M(t_j)$ | Workbook money-market-account value, $e^{I(t_j)}$ | Dimensionless |
+| $M(t_j)$ | Money-market-account value, $e^{I(t_j)}$ | Dimensionless |
 
 ### Interest-rate swap valuation
 
@@ -174,9 +173,9 @@ The affine notation $A(\tau)$ in the bond formula is distinct from party $A$ and
 | $P_i=P(0,T_i)$ | Time-zero discount factor for payment date $T_i$ | Discount factor |
 | $P_0$ | Discount factor at inception; normally equal to one | Discount factor |
 | $P_N$ | Discount factor at the final payment date | Discount factor |
-| $F_i$ | Unannualized forward return over payment period $i$ | Rate for the period |
+| $F_i$ | Periodic forward rate over payment period $i$, without annualization | Rate for the period |
 | $\delta_i$ | Year fraction for payment period $i$ | Years |
-| $\delta$ | Constant quarterly accrual factor used in the workbook | $0.25$ years |
+| $\delta$ | Constant quarterly accrual factor used in the model | $0.25$ years |
 | $\mathrm{PV}_{\mathrm{float}}$ | Present value of the floating-rate leg per unit notional | Value per unit notional |
 | $A_N$ | Time-zero fixed-leg annuity through the final payment date | Years |
 | $K$ | Par fixed swap rate determined at inception | Rate per year |
@@ -200,7 +199,7 @@ All valuation equations assume unit notional. For a contractual notional $\mathc
 | $\mathrm{PFE}_{X,q}(t_j)$ | Empirical $q$-quantile of exposure for party $X$ at $t_j$ | Value per unit notional |
 | $q$ | Selected confidence level for PFE | $0.90$, $0.95$, or $0.99$ |
 
-The workbook rows labelled `PFE(A)` and `PFE(B)` report $\mathrm{MAXFE}$, not a percentile. The separately labelled 90%, 95%, and 99% rows contain the empirical percentile calculations.
+Rows labelled `PFE(A)` and `PFE(B)` report $\mathrm{MAXFE}$, not a percentile. The separately labelled 90%, 95%, and 99% rows contain empirical positive-exposure percentiles for party A.
 
 ### Credit risk and valuation adjustment
 
@@ -209,8 +208,8 @@ The workbook rows labelled `PFE(A)` and `PFE(B)` report $\mathrm{MAXFE}$, not a 
 | $s_X$ | CDS spread supplied for party $X$ | Rate per year |
 | $R_X$ | Assumed recovery fraction for party $X$ after default | Between 0 and 1 |
 | $\mathrm{LGD}_X=1-R_X$ | Loss-given-default fraction for party $X$ | Between 0 and 1 |
-| $Q_X(t)$ | Workbook-implied survival measure for party $X$ through time $t$ | Probability-like value |
-| $Q_X(t_{j-1})-Q_X(t_j)$ | Workbook marginal default measure over interval $(t_{j-1},t_j]$ | Probability-like value |
+| $Q_X(t)$ | Survival measure produced by the implemented CDS/recovery mapping for party $X$ | Probability-like value |
+| $Q_X(t_{j-1})-Q_X(t_j)$ | Marginal default measure over interval $(t_{j-1},t_j]$ | Probability-like value |
 | $\mathrm{CVA}^{A}_j$ | Period-$j$ adjustment associated with positive exposure to $A$ and default of $B$ | Value per unit notional |
 | $\mathrm{CVA}^{B}_j$ | Period-$j$ opposite-direction, DVA-like adjustment associated with default of $A$ | Value per unit notional |
 | $\mathrm{CVA}^{A},\mathrm{CVA}^{B}$ | Sums of the corresponding period adjustments | Value per unit notional |
@@ -218,7 +217,7 @@ The workbook rows labelled `PFE(A)` and `PFE(B)` report $\mathrm{MAXFE}$, not a 
 | $\mathrm{BCVA}$ | Bilateral adjustment, commonly represented as CVA minus DVA under a stated sign convention | Value per unit notional |
 | $\mathcal N$ | Optional contractual notional used to scale unit-notional results | Currency amount |
 
-Superscripts $A$ and $B$ identify the exposure/default direction used by the workbook; they are labels, not mathematical powers. Because CVA/DVA sign conventions vary, the economic viewpoint should always be stated when reporting a bilateral result.
+Superscripts $A$ and $B$ identify the implemented exposure/default direction; they are labels, not mathematical powers. Because CVA/DVA sign conventions vary, the economic viewpoint should always be stated when reporting a bilateral result.
 
 ## Mathematical framework
 
@@ -287,7 +286,7 @@ $$
 =\sum_i\left(P_i^{\mathrm{Vasicek}}-P_i^{\mathrm{market}}\right)^2.
 $$
 
-The workbook stores this objective in `TERM structures!M6`; hidden Solver names identify `M2:M5` as adjustable cells.
+`TERM structures!M6` stores this objective; hidden Solver names identify `M2:M5` as adjustable cells.
 
 ### 3. Monte Carlo transition
 
@@ -301,27 +300,21 @@ $$
 then samples
 
 $$
-r_{n,j}=m_{n,j}+s_{\mathrm{workbook}}Z_{n,j},
+r_{n,j}=m_{n,j}+s_rZ_{n,j},
 \qquad Z_{n,j}=\Phi^{-1}(U_{n,j}),\quad U_{n,j}\sim U(0,1).
 $$
 
-The shock scale in `MonteCarlo!B8` is implemented as
+The exact Vasicek conditional standard deviation is
 
 $$
-s_{\mathrm{workbook}}
-=\sqrt{\frac{\sigma^2\alpha}{2}
-\left(1-e^{-2\alpha\Delta t}\right)}.
-$$
-
-For comparison, the standard exact Vasicek transition uses
-
-$$
-s_{\mathrm{standard}}
+s_r
 =\sqrt{\frac{\sigma^2}{2\alpha}
 \left(1-e^{-2\alpha\Delta t}\right)}.
 $$
 
-This difference is material and is listed as a model-validation issue.
+`MonteCarlo!B8` implements this expression as `SQRT((G5^2/(2*G3))*(1-EXP(-2*G3*B7)))`, where `G3` is $\alpha$, `G5` is $\sigma$, and `B7` is $\Delta t$.
+
+The cached simulation matrices in the repository were regenerated after this correction. The standardized shocks were recovered from the original paths and reused with the exact transition scale, preserving the scenario shock sequence while making the short-rate, discount-factor, annuity, swap-value, exposure, and CVA caches mutually consistent for macro-disabled viewing.
 
 The scenario mean and its time integral are
 
@@ -334,7 +327,7 @@ I(t_j)=I(t_{j-1})
 +\frac{\Delta t}{2}\left[\bar r(t_{j-1})+\bar r(t_j)\right],
 $$
 
-with workbook money-market-account value
+with money-market-account value
 
 $$
 M(t_j)=e^{I(t_j)}.
@@ -342,7 +335,7 @@ $$
 
 ### 4. IRS valuation
 
-Let $T_i$ be the quarterly payment dates and $P_i=P(0,T_i)$. The workbook's periodic forward return is
+Let $T_i$ be the quarterly payment dates and $P_i=P(0,T_i)$. The periodic forward rate for payment period $i$ is
 
 $$
 F_i=\frac{P_{i-1}}{P_i}-1.
@@ -416,7 +409,7 @@ $$
 \mathrm{MAXFE}_X(t_j)=\max_n \mathrm{FE}_{X,n}(t_j).
 $$
 
-Separate rows calculate empirical 90%, 95%, and 99% quantiles using Excel's `PERCENTILE` function.
+Separate rows calculate empirical 90%, 95%, and 99% positive-exposure quantiles for party A using Excel's `PERCENTILE` function.
 
 ### 7. Credit and CVA equations used on `Main`
 
@@ -426,23 +419,25 @@ $$
 Q_X(t)=\frac{e^{-s_Xt}-R_X}{1-R_X}.
 $$
 
-This is the workbook's exact formula; it is not the usual constant-hazard approximation $Q(t)=e^{-s t/(1-R)}$.
+This is the implemented survival mapping; it is not the usual constant-hazard approximation $Q(t)=e^{-s t/(1-R)}$.
 
 The period contributions implemented in rows 9 and 10 are
 
 $$
 \mathrm{CVA}^{A}_j
-=(1-R_B)Q_B(t_j)
+=(1-R_B)Q_A(t_j)
 \left[Q_B(t_{j-1})-Q_B(t_j)\right]
 \frac{\mathrm{EE}_A(t_j)}{M(t_j)},
 $$
 
 $$
 \mathrm{CVA}^{B}_j
-=(1-R_A)Q_A(t_j)
+=(1-R_A)Q_B(t_j)
 \left[Q_A(t_{j-1})-Q_A(t_j)\right]
 \frac{\mathrm{EE}_B(t_j)}{M(t_j)}.
 $$
+
+The $Q_A(t_j)$ factor in $\mathrm{CVA}^{A}_j$ represents survival of A while B defaults; $Q_B(t_j)$ plays the symmetric role in $\mathrm{CVA}^{B}_j$.
 
 Totals are
 
@@ -452,13 +447,13 @@ $$
 \mathrm{CVA}^{B}=\sum_j\mathrm{CVA}^{B}_j.
 $$
 
-From one party's viewpoint, the opposite-direction quantity is DVA-like. The workbook does not explicitly form a single bilateral value such as $\mathrm{BCVA}=\mathrm{CVA}-\mathrm{DVA}$.
+From one party's viewpoint, the opposite-direction quantity is DVA-like. The model does not explicitly form a single bilateral value such as $\mathrm{BCVA}=\mathrm{CVA}-\mathrm{DVA}$.
 
 ## Technical guide to every sheet
 
 ### `README`
 
-This is the first worksheet and the workbook's navigation page. It contains:
+This is the first worksheet and the navigation page. It contains:
 
 - a quick-start sequence;
 - internal links to all calculation sheets;
@@ -525,7 +520,7 @@ The chart on this sheet compares the market discount factors in `W3:W35` with Va
 
 #### Risky term-structure section: `Q:AB`
 
-Let $P_i=e^{-z_iT_i}$ be the risk-free discount factor (`W`), $\delta_i$ the accrual factor (`U`), and $X_i$ the risky par yield (`X`). The workbook accumulates
+Let $P_i=e^{-z_iT_i}$ be the risk-free discount factor (`W`), $\delta_i$ the accrual factor (`U`), and $X_i$ the risky par yield (`X`). The risky annuity is accumulated as
 
 $$
 V_i=V_{i-1}+\delta_iP_i,
@@ -563,7 +558,7 @@ This sheet prices the swap at inception.
 
 - `A3:A23`: quarterly maturities from 0 to 5 years.
 - `B3:B23`: Vasicek ZCB values.
-- `C4:C23`: periodic forward returns, $P_{i-1}/P_i-1$.
+- `C4:C23`: periodic forward rates, $P_{i-1}/P_i-1$.
 - `F3=1-B23`: floating-leg value by the ZCB identity.
 - `F4=SUMPRODUCT(B4:B23,C4:C23)`: floating-leg value from discounted forward payments.
 - `F5=F3-N24`: inception residual swap value.
@@ -584,13 +579,21 @@ The Vasicek inputs appear in `S3:S6`.
 
 This sheet stores the simulation controls and short-rate paths.
 
-- `B1:B9`: swap tenor, frequencies, initial swap values, scenario count, time step, shock scale, and time-step count.
+- `B1:B9`: swap tenor, frequencies, initial swap values, scenario count, time step, exact Vasicek shock scale, and time-step count.
 - `G2:G5`: `r0`, `alpha`, `mu`, and `sigma`.
 - `B14:V14`: the 21-point grid from 0 to 5 years.
 - `A15:A10014`: scenario identifiers.
 - `B15:V10014`: 10,000 Vasicek short-rate paths written by VBA.
 
 `MC_sim` also writes the averaged short-rate path, trapezoidal integral, and money-market account into `Main!B:D`.
+
+The shock scale in `B8` is
+
+$$
+\sigma\sqrt{\frac{1-e^{-2\alpha\Delta t}}{2\alpha}},
+$$
+
+which is the exact conditional standard deviation for the stated Vasicek diffusion.
 
 ### `Term_Structures`
 
@@ -688,28 +691,26 @@ These findings are documented so that stored workbook results are not mistaken f
 3. **Missing `IRS_CVA` sheet:** `Term_structure_sim`, `Annuity_sim`, and `PV_Swap_sim` reference a worksheet named `IRS_CVA`, which does not exist. The likely intended sheet is `Term_Structures`.
 4. **`TimeStep` versus `TimeSteps`:** `CVA_sim` declares `TimeSteps` but later loops on undeclared `TimeStep`. Under the current module settings this prevents the annuity, PV, and exposure loops from executing as intended.
 5. **Vasicek argument mapping:** the UDF signature is `(tau, r, mu, alpha, sigma)`, but worksheet labels and macro calls pass `alpha` before `mu`. Cached ZCB outputs reflect this semantic reversal.
-6. **Monte Carlo variance:** `MonteCarlo!B8` multiplies the variance term by $\alpha$; the standard exact Vasicek transition divides by $\alpha$.
-7. **Calculation state:** standalone `MC_sim` disables calculation and screen updating but does not restore them before exit. This can leave Excel in a non-recalculating state.
-8. **PFE naming:** rows labelled `PFE(A)` and `PFE(B)` use `MAX`, not a chosen confidence quantile. The percentile rows are the actual 90%, 95%, and 99% quantiles.
-9. **Credit mapping:** the `Main` survival formula and the extra $Q(t_j)$ factor in period CVA differ from the most common reduced-form discrete CVA formulation. Validate the intended recovery/default convention.
-10. **Risky-curve recursion:** the B survival recursion uses A's intermediate risky-annuity/default terms and should be independently checked.
-11. **No production CCR features:** collateral, netting, margin period of risk, funding, wrong-way risk, stochastic credit spreads, and close-out conventions are outside the current scope.
+6. **Calculation state:** standalone `MC_sim` disables calculation and screen updating but does not restore them before exit. This can leave Excel in a non-recalculating state.
+7. **PFE naming:** rows labelled `PFE(A)` and `PFE(B)` use `MAX`, not a chosen confidence quantile. The percentile rows are the actual 90%, 95%, and 99% quantiles.
+8. **Credit mapping:** the `Main` survival formula and the extra $Q(t_j)$ factor in period CVA differ from the most common reduced-form discrete CVA formulation. Validate the intended recovery/default convention.
+9. **Risky-curve recursion:** the B survival recursion uses A's intermediate risky-annuity/default terms and should be independently checked.
+10. **No production CCR features:** collateral, netting, margin period of risk, funding, wrong-way risk, stochastic credit spreads, and close-out conventions are outside the current scope.
 
 ## Validation checklist
 
 Before using a refreshed result:
 
 1. Confirm the semantic mapping of `alpha` and `mu` in every Vasicek UDF call.
-2. Decide whether the Monte Carlo variance should use $\alpha$ or $1/\alpha$.
-3. Replace or correct all `IRS_CVA` worksheet references.
-4. Correct the `TimeStep`/`TimeSteps` variable and add `Option Explicit` to every macro module.
-5. Restore `Application.ScreenUpdating` and worksheet calculation state in a guaranteed cleanup block.
-6. Re-run all simulation stages in dependency order.
-7. Confirm $V_{\mathrm{swap}}(0)\approx0$ and $V_{\mathrm{swap}}(T)\approx0$.
-8. Compare simulated means and variances with analytical Vasicek moments.
-9. Reconcile selected pathwise ZCB, annuity, PV, and exposure cells independently.
-10. Benchmark CVA against a standard $\mathrm{LGD}\times\Delta\mathrm{PD}\times\mathrm{DF}\times\mathrm{EE}$ implementation.
-11. Record the random seed or introduce reproducible random-number generation for controlled tests.
+2. Replace or correct all `IRS_CVA` worksheet references.
+3. Correct the `TimeStep`/`TimeSteps` variable and add `Option Explicit` to every macro module.
+4. Restore `Application.ScreenUpdating` and worksheet calculation state in a guaranteed cleanup block.
+5. Re-run all simulation stages in dependency order.
+6. Confirm $V_{\mathrm{swap}}(0)\approx0$ and $V_{\mathrm{swap}}(T)\approx0$.
+7. Compare simulated means and variances with analytical Vasicek moments.
+8. Reconcile selected pathwise ZCB, annuity, PV, and exposure cells independently.
+9. Benchmark CVA against a standard $\mathrm{LGD}\times\Delta\mathrm{PD}\times\mathrm{DF}\times\mathrm{EE}$ implementation.
+10. Record the random seed or introduce reproducible random-number generation for controlled tests.
 
 ## Disclaimer
 
