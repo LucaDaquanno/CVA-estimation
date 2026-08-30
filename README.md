@@ -613,10 +613,10 @@ For scenario $n$ and time column $j$, the combined macro writes
 
 $$
 P_{n,j}=\mathrm{Vasicek\_ZCB}
-\left(t_j,r_{n,j},\alpha_{\mathrm{sheet}},\mu_{\mathrm{sheet}},\sigma\right).
+\left(t_j,r_{n,j},\mu,\alpha,\sigma\right).
 $$
 
-Because the UDF expects `(tau, r, mu, alpha, sigma)`, this call maps the sheet's `alpha` into the function's `mu` argument and the sheet's `mu` into the function's `alpha` argument.
+The macro calls pass the Vasicek parameters in the order matching the UDF signature `(tau, r, mu, alpha, sigma)`.
 
 Cells `AL2:AS2` extend the displayed maturity headings to seven years, but the principal simulation matrix stops at `AI` (five years).
 
@@ -671,7 +671,7 @@ The VBA project contains two UDF modules and six simulation modules:
 | `Annuity_sim` | Scenario annuities |
 | `PV_Swap_sim` | Scenario swap values |
 | `FE_sim` | Positive/negative exposure split |
-| `CVA_sim` | Attempted end-to-end orchestration |
+| `CVA_sim` | End-to-end orchestration |
 
 The intended execution order is:
 
@@ -684,37 +684,27 @@ MC_sim
 -> Excel recalculation of Main
 ```
 
-Do not assume that running `CVA_sim` currently reproduces this sequence correctly; see the next section.
-
 ## Known implementation and model-risk issues
 
 These findings are documented so that stored workbook results are not mistaken for a fully reproducible production calculation.
 
 1. **Macro-disabled recalculation:** 106 worksheet formulas call VBA UDFs: `TERM structures!F3:F35`, `TERM structures!I3:I35`, `IRS!B4:B23`, and `IRS!J4:J23`. Without VBA, these cells may retain cached values or return `#NAME?` after recalculation.
 2. **Stored scenario outputs:** most of the 10,000-row matrices are VBA-written constants, not live formulas. Parameter changes do not propagate until the appropriate macros run successfully.
-3. **Missing `IRS_CVA` sheet:** `Term_structure_sim`, `Annuity_sim`, and `PV_Swap_sim` reference a worksheet named `IRS_CVA`, which does not exist. The likely intended sheet is `Term_Structures`.
-4. **`TimeStep` versus `TimeSteps`:** `CVA_sim` declares `TimeSteps` but later loops on undeclared `TimeStep`. Under the current module settings this prevents the annuity, PV, and exposure loops from executing as intended.
-5. **Vasicek argument mapping:** the UDF signature is `(tau, r, mu, alpha, sigma)`, but worksheet labels and macro calls pass `alpha` before `mu`. Cached ZCB outputs reflect this semantic reversal.
-6. **Calculation state:** standalone `MC_sim` disables calculation and screen updating but does not restore them before exit. This can leave Excel in a non-recalculating state.
-7. **PFE naming:** rows labelled `PFE(A)` and `PFE(B)` use `MAX`, not a chosen confidence quantile. The percentile rows are the actual 90%, 95%, and 99% quantiles.
-8. **Credit mapping:** the `Main` survival formula and the extra $Q(t_j)$ factor in period CVA differ from the most common reduced-form discrete CVA formulation. Validate the intended recovery/default convention.
-9. **Risky-curve recursion:** the B survival recursion uses A's intermediate risky-annuity/default terms and should be independently checked.
-10. **No production CCR features:** collateral, netting, margin period of risk, funding, wrong-way risk, stochastic credit spreads, and close-out conventions are outside the current scope.
+3. **PFE naming:** rows labelled `PFE(A)` and `PFE(B)` use `MAX`, not a chosen confidence quantile. The percentile rows are the actual 90%, 95%, and 99% quantiles.
+4. **Credit mapping:** the `Main` survival formula and the extra $Q(t_j)$ factor in period CVA differ from the most common reduced-form discrete CVA formulation. Validate the intended recovery/default convention.
+5. **Risky-curve recursion:** the B survival recursion uses A's intermediate risky-annuity/default terms and should be independently checked.
+6. **No production CCR features:** collateral, netting, margin period of risk, funding, wrong-way risk, stochastic credit spreads, and close-out conventions are outside the current scope.
 
 ## Validation checklist
 
 Before using a refreshed result:
 
-1. Confirm the semantic mapping of `alpha` and `mu` in every Vasicek UDF call.
-2. Replace or correct all `IRS_CVA` worksheet references.
-3. Correct the `TimeStep`/`TimeSteps` variable and add `Option Explicit` to every macro module.
-4. Restore `Application.ScreenUpdating` and worksheet calculation state in a guaranteed cleanup block.
-5. Re-run all simulation stages in dependency order.
-6. Confirm $V_{\mathrm{swap}}(0)\approx0$ and $V_{\mathrm{swap}}(T)\approx0$.
-7. Compare simulated means and variances with analytical Vasicek moments.
-8. Reconcile selected pathwise ZCB, annuity, PV, and exposure cells independently.
-9. Benchmark CVA against a standard $\mathrm{LGD}\times\Delta\mathrm{PD}\times\mathrm{DF}\times\mathrm{EE}$ implementation.
-10. Record the random seed or introduce reproducible random-number generation for controlled tests.
+1. Re-run all simulation stages in dependency order.
+2. Confirm $V_{\mathrm{swap}}(0)\approx0$ and $V_{\mathrm{swap}}(T)\approx0$.
+3. Compare simulated means and variances with analytical Vasicek moments.
+4. Reconcile selected pathwise ZCB, annuity, PV, and exposure cells independently.
+5. Benchmark CVA against a standard $\mathrm{LGD}\times\Delta\mathrm{PD}\times\mathrm{DF}\times\mathrm{EE}$ implementation.
+6. Record the random seed or introduce reproducible random-number generation for controlled tests.
 
 ## Disclaimer
 
